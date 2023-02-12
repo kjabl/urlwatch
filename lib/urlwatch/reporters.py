@@ -669,6 +669,96 @@ class TelegramReporter(TextReporter):
         return result
 
 
+class AppriseApiReporter(TextReporter):
+    """Send a message through Aprrise REST API Server"""
+
+    __kind__ = "apprise-api"
+
+    def submit(self):
+        apprise_host = self.config["host"]
+        if not apprise_host:
+            logger.error('Not callin Apprise API (mandatory parameter "host" not set.')
+        apprise_mode = self.config["mode"]  # tag or url
+        text = "\n".join(super().submit())
+
+        if not text:
+            logger.debug('Not calling Apprise API (no changes)')
+            return
+
+        result = None
+
+        if apprise_mode == "tag":
+            """We're in tag mode"""
+            # First check required config
+            apprise_tags = self.config.get("tags", [])
+            if "key" not in self.config:
+                logger.error('Not calling Apprise API (required parameter "key" not specified)')
+                return
+            if apprise_tags:
+                for tag in apprise_tags:
+                    res = self.submitToAppriseApiByTag(text, tag, apprise_host)
+                if res.status_code != requests.codes.ok or res is None:
+                    result = res
+            else:
+                logger.error('Not calling Apprise API (required parameter "tags" not specified)')
+                return
+        if apprise_mode == "url":
+            """We're in url mode which is more flexible"""
+            apprise_urls = self.config.get("urls", [])
+            if apprise_urls:
+                res = self.submitToAppriseApiByUrl(text, apprise_urls, apprise_host)
+                if res.status_code != requests.codes.ok or res is None:
+                    result = res
+            else:
+                logger.error('Not calling Apprise API (required parameter "urls" not specified)')
+
+        return result
+
+    def submitToAppriseApiByTag(self, text, tag, apprise_host):
+        payload = {
+            'body': text,
+            'type': self.config.get('type', "info"),
+            'tag': tag
+        }
+        apprise_url = apprise_host + "/notify/" + self.config["key"]
+        result = requests.post(url=apprise_url, json=payload)
+
+        try:
+            json_res = result.json()
+
+            if (result.status_code == requests.codes.ok):
+                logger.info("AppriseApi response: ok '{0}'. {1}".format(json_res['ok'], json_res['result']))
+            else:
+                logger.error("AppriseApi error: {0}".format(json_res['description']))
+        except ValueError:
+            logger.error(
+                "Failed to parse AppriseApi response. HTTP status code: {0}, content: {1}".format(result.status_code,
+                                                                                                  result.content))
+        return result
+
+    def submitToAppriseApiByUrl(self, text, urls, apprise_host):
+        payload = {
+            'body': text,
+            'type': self.config.get('type', "info"),
+            'urls': urls
+        }
+        apprise_url = apprise_host + "/notify/"
+        result = requests.post(url=apprise_url, json=payload)
+
+        try:
+            json_res = result.json()
+
+            if (result.status_code == requests.codes.ok):
+                logger.info("AppriseApi response: ok '{0}'. {1}".format(json_res['ok'], json_res['result']))
+            else:
+                logger.error("AppriseApi error: {0}".format(json_res['description']))
+        except ValueError:
+            logger.error(
+                "Failed to parse AppriseApi response. HTTP status code: {0}, content: {1}".format(result.status_code,
+                                                                                                  result.content))
+        return result
+
+
 class SlackReporter(TextReporter):
     """Send a message to a Slack channel"""
 
