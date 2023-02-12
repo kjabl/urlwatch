@@ -73,6 +73,11 @@ try:
 except ImportError:
     AnsiToWin32 = None
 
+try:
+    import apprise
+except ImportError:
+    apprise = None
+
 logger = logging.getLogger(__name__)
 
 # Regular expressions that match the added/removed markers of GNU wdiff output
@@ -1123,3 +1128,33 @@ class ShellReporter(TextReporter):
         exitcode = process.wait()
         if exitcode != 0:
             logger.error('Shell reporter {} exited with {}'.format(cmd, exitcode))
+
+
+class AppriseReporter(TextReporter):
+    """Use apprise to send message to lots of different services"""
+
+    __kind__ = 'apprise'
+
+    def __init__(self, *args, **kwargs):
+        self._appObj = apprise.Apprise()
+        if self.config["config_path"]:
+            self._appConfig = apprise.AppriseConfig()
+            self._appConfig.add(self.config["config_path"])
+            self._appObj.add(self._appConfig)
+        else:
+            self._appObj = None
+        super().__init__(*args, **kwargs)
+
+    def submit(self):
+        if self._appObj is None:
+            logger.error('Not sending apprise notification as config could not be loaded.')
+            return
+        apprise_urls = self.config.get("urls", [])
+        if apprise_urls:
+            for url in apprise_urls:
+                self._appObj.add(url)
+            self._appObj.notify(
+                body=super().submit()
+            )
+        else:
+            logger.error('Not sending apprise notifications as no apprise urls are specified')
